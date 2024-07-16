@@ -9,6 +9,23 @@ result_dict={}
 from py_vollib.black_scholes.implied_volatility import implied_volatility
 from py_vollib.black_scholes.greeks.analytical import delta
 
+# for buy trade itm means 55400,55300....call
+# for sell trade itm means 55400, 55500...put
+def getstrikes_put(ltp, step , strikestep):
+    result = {}
+    result[int(ltp)] = None
+
+    for i in range(step):
+        result[int(ltp + strikestep * (i + 1))] = None
+    return result
+
+def getstrikes_call(ltp, step , strikestep):
+    result = {}
+    result[int(ltp)] = None
+    for i in range(step):
+        result[int(ltp - strikestep * (i + 1))] = None
+
+    return result
 
 def fetchcorrectstrike(strikelist):
     target_value = 0.6
@@ -30,8 +47,6 @@ def convert_date_to_short_format(date_string):
 def convert_julian_date(julian_date):
     input_format = "%y%m%d"
     parsed_date = datetime.strptime(str(julian_date), input_format)
-
-    # Add the desired time (15:30:00) to the parsed date
     desired_time = "15:30:00"
     formatted_date_with_time = parsed_date.replace(hour=15, minute=30, second=0)
 
@@ -39,6 +54,7 @@ def convert_julian_date(julian_date):
 
 
 def get_delta(strikeltp,underlyingprice,strike,timeexpiery,riskfreeinterest,flag):
+    # flag me  call  'c' ya put 'p'
     from py_vollib.black_scholes.greeks.analytical import delta
     iv= implied_volatility(price=strikeltp,S=underlyingprice,K=strike,t=timeexpiery,r=riskfreeinterest,flag=flag)
     value = delta(flag,underlyingprice,strike,timeexpiery,riskfreeinterest,iv)
@@ -47,6 +63,9 @@ def get_delta(strikeltp,underlyingprice,strike,timeexpiery,riskfreeinterest,flag
 
 def option_delta_calculation(symbol,expiery,strike,optiontype,underlyingprice,MODE):
     optionsymbol = f"NSE:{symbol}{expiery}{strike}{optiontype}"
+    if symbol == "SENSEX":
+        optionsymbol = f"BSE:{symbol}{expiery}{strike}{optiontype}"
+
     optionltp= FyresIntegration.get_ltp(optionsymbol)
     print("expiery: ",expiery)
     if MODE=="WEEKLY":
@@ -119,7 +138,8 @@ def get_user_settings():
                 'Symbol': row['Symbol'],"Quantity":row['Quantity'],'EXPIERY':row['EXPIERY'],'TimeFrame':row['TimeFrame'],
                 'once' : False,'USE_CPR': row['USE_CPR'],'PartialProfitQty': row['PartialProfitQty'],'Target': row['Target'],
                 'CPR_CONDITION':False,"target_value":None,"stoploss_value":None,'trighigh':None,'triglow':None,'Trade':None,
-                "runtime": datetime.now(),'EntryTime': row['EntryTime'],'ExitTime': row['ExitTime'],'Atr_Period':row['Atr_Period']
+                "runtime": datetime.now(),'EntryTime': row['EntryTime'],'ExitTime': row['ExitTime'],'Atr_Period':row['Atr_Period'],
+                'StrikeNumber': row['StrikeNumber'],'strikestep': row['strikestep'],'TradeExpiery':row['TradeExpiery'],'USEEXPIERY':row['USEEXPIERY'],
 
             }
             result_dict[row['Symbol']] = symbol_dict
@@ -193,6 +213,18 @@ def write_to_order_logs(message):
 pivot = None
 bc = None
 tc = None
+
+def get_max_delta_strike(strikelist):
+    max_delta = -float("inf")  # Initialize with negative infinity
+    max_delta_strike = None
+    for strike, delta in strikelist.items():
+        if delta > max_delta:
+            max_delta = delta
+            max_delta_strike = strike
+    return max_delta_strike
+
+def round_to_nearest(number, nearest):
+    return round(number / nearest) * nearest
 def main_strategy():
     global result_dict,once,pivot,bc,tc
 
@@ -282,12 +314,26 @@ def main_strategy():
                           f" bc: {bc}, tc: {tc},Trade: {params['Trade']},stoploss_value: {params['stoploss_value']}"
                           f",Target: {params['Target']},parttial qty: {params['PartialProfitQty']}")
 
+
                 if current_time>EntryTime and current_time < ExitTime and  previousBar_close>params['trighigh'] and (params['CPR_CONDITION']=="BUY" or params['CPR_CONDITION']=="BOTH"):
                     params["target_value"]=previousBar_close+params["Target"]
                     params["stoploss_value"]=previousBar_low
                     params['Trade']="BUY"
+                    strikelist = getstrikes_call(ltp=round_to_nearest(number=currentBar_close, nearest=params['strikestep']),
+                                                 step=params['StrikeNumber'],
+                                                 strikestep=params['strikestep'])
+                    for strike in strikelist:
+                        delta = float(
+                            option_delta_calculation(symbol=symbol, expiery=params['TradeExpiery'], strike=strike,
+                                                     optiontype="CE",
+                                                     underlyingprice=currentBar_close, MODE=params["USEEXPIERY"]))
+                        strikelist[strike] = delta
+                    final = get_max_delta_strike(strikelist)
+                    optionsymbol = f"NSE:{symbol}{params['TradeExpiery']}{final}CE"
+                    if symbol == "SENSEX":
+                        optionsymbol = f"BSE:{symbol}{params['TradeExpiery']}{final}CE"
                     OrderLog=(f"{timestamp} Buy order executed @ {formatedsymbol}, target= {params['target_value']}, "
-                              f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']}")
+                              f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']},order symbol={optionsymbol}")
                     print(OrderLog)
                     write_to_order_logs(OrderLog)
 
@@ -296,8 +342,22 @@ def main_strategy():
                     params["target_value"]=previousBar_close-params["Target"]
                     params["stoploss_value"]=previousBar_high
                     params['Trade'] = "SHORT"
+                    strikelist = getstrikes_put(
+                        ltp=round_to_nearest(number=currentBar_close, nearest=params['strikestep']),
+                        step=params['StrikeNumber'],
+                        strikestep=params['strikestep'])
+                    for strike in strikelist:
+                        delta = float(
+                            option_delta_calculation(symbol=symbol, expiery=params['TradeExpiery'], strike=strike,
+                                                     optiontype="CE",
+                                                     underlyingprice=currentBar_close, MODE=params["USEEXPIERY"]))
+                        strikelist[strike] = delta
+                    final = get_max_delta_strike(strikelist)
+                    optionsymbol = f"NSE:{symbol}{params['TradeExpiery']}{final}CE"
+                    if symbol == "SENSEX":
+                        optionsymbol = f"BSE:{symbol}{params['TradeExpiery']}{final}CE"
                     OrderLog = (f"{timestamp} Sell order executed @ {formatedsymbol}, target= {params['target_value']}, "
-                                f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']}")
+                                f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']}, order symbol: {optionsymbol}")
                     print(OrderLog)
                     write_to_order_logs(OrderLog)
 
