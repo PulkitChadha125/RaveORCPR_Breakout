@@ -1,3 +1,3 @@
-Symbol,Quantity,EXPIERY,TimeFrame,USE_CPR,PartialProfitQty,Target,Atr_Period,EntryTime,ExitTime,strikestep,StrikeNumber,USEEXPIERY,TradeExpiery
-NIFTY,50,25-Jul-24,5,True,25,10,14,13:25,23:50,50,3,WEEKLY,24718
-SENSEX,50,25-Jul-24,5,True,25,10,14,13:25,23:50,100,3,WEEKLY,24719
+Symbol,Quantity,EXPIERY,TimeFrame,USE_CPR,PartialProfitQty,Atr_Period,Atr_Multiplier,EntryTime,ExitTime,strikestep,StrikeNumber,USEEXPIERY,TradeExpiery
+NIFTY,50,25-Jul-24,5,TRUE,25,14,1,13:40,23:50,50,6,WEEKLY,24718
+SENSEX,50,25-Jul-24,5,TRUE,25,14,1,13:40,23:50,100,6,WEEKLY,24719

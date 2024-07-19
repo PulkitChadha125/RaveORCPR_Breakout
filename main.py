@@ -136,7 +136,8 @@ def get_user_settings():
             # Create a nested dictionary for each symbol
             symbol_dict = {
                 'Symbol': row['Symbol'],"Quantity":row['Quantity'],'EXPIERY':row['EXPIERY'],'TimeFrame':row['TimeFrame'],
-                'once' : False,'USE_CPR': row['USE_CPR'],'PartialProfitQty': row['PartialProfitQty'],'Target': row['Target'],
+                'once' : False,'USE_CPR': row['USE_CPR'],'PartialProfitQty': row['PartialProfitQty'],'Atr_Multiplier':row['Atr_Multiplier'],
+                'SecondarySl': row['SecondarySl'],'TimeBasedExit':None,
                 'CPR_CONDITION':False,"target_value":None,"stoploss_value":None,'trighigh':None,'triglow':None,'Trade':None,
                 "runtime": datetime.now(),'EntryTime': row['EntryTime'],'ExitTime': row['ExitTime'],'Atr_Period':row['Atr_Period'],
                 'StrikeNumber': row['StrikeNumber'],'strikestep': row['strikestep'],'TradeExpiery':row['TradeExpiery'],'USEEXPIERY':row['USEEXPIERY'],
@@ -191,7 +192,7 @@ def symbols():
         "strikePrice": "strikePrice","minLotSize": "minLotSize","underFyTok": "underFyTok","currencyCode": "currencyCode","underSym": "underSym","expiryDate": "expiryDate",
         "tradingSession": "tradingSession","asmGsmVal": "asmGsmVal","faceValue": "faceValue","tickSize": "tickSize","exchangeName": "exchangeName",
         "originalExpDate": "originalExpDate","isin": "isin","tradeStatus": "tradeStatus","qtyFreeze": "qtyFreeze","previousOi": "previousOi",
-        "fetchHistory":None
+        "fetchHistory":None,"pphit":None,"Remainingqty":None
     }
     df.rename(columns=column_mapping, inplace=True)
     for col in column_mapping.values():
@@ -283,10 +284,10 @@ def main_strategy():
                         previousBar_high = previousBar[2]
                         if params['Trade']=="BUY":
                             atr = previousBar[6]
-                            params["stoploss_value"] = previousBar_low-atr
+                            params["SecondarySl"] = previousBar_low-(atr*float(params['Atr_Multiplier']))
                         if params['Trade']=="SHORT":
                             atr = previousBar[6]
-                            params["stoploss_value"] = previousBar_high + atr
+                            params["SecondarySl"] = previousBar_high + (atr*float(params['Atr_Multiplier']))
                         next_specific_part_time = datetime.now() + timedelta(
                                 seconds=determine_min(params["TimeFrame"]) * 60)
                         next_specific_part_time = round_down_to_interval(next_specific_part_time,
@@ -297,9 +298,7 @@ def main_strategy():
                         print("Error happened in fetching data : ", str(e))
                         traceback.print_exc()
 
-                    # print(f"{formatedsymbol} previousBar_close: ",previousBar_close)
-                    # print(f"{formatedsymbol} bc: ", bc)
-                    # print(f"{formatedsymbol} tc: ", tc)
+
 
                 if current_time>EntryTime and current_time < ExitTime and params['USE_CPR']==True:
                     if previousBar_close>bc:
@@ -312,13 +311,16 @@ def main_strategy():
                 if current_time > EntryTime and current_time < ExitTime:
                     print(f"{timestamp} {formatedsymbol} previousBar_close:{previousBar_close},pivot: {pivot}"
                           f" bc: {bc}, tc: {tc},Trade: {params['Trade']},stoploss_value: {params['stoploss_value']}"
-                          f",Target: {params['Target']},parttial qty: {params['PartialProfitQty']}")
+                          f",parttial qty: {params['PartialProfitQty']},SecondarySl: {params['SecondarySl']}")
+
 
 
                 if current_time>EntryTime and current_time < ExitTime and  previousBar_close>params['trighigh'] and (params['CPR_CONDITION']=="BUY" or params['CPR_CONDITION']=="BOTH"):
-                    params["target_value"]=previousBar_close+params["Target"]
                     params["stoploss_value"]=previousBar_low
                     params['Trade']="BUY"
+                    params["pphit"]= "NOHIT"
+                    params["Remainingqty"]= params[ 'Quantity']-params['PartialProfitQty']
+                    params['TimeBasedExit']= "TAKEEXIT"
                     strikelist = getstrikes_call(ltp=round_to_nearest(number=currentBar_close, nearest=params['strikestep']),
                                                  step=params['StrikeNumber'],
                                                  strikestep=params['strikestep'])
@@ -332,16 +334,19 @@ def main_strategy():
                     optionsymbol = f"NSE:{symbol}{params['TradeExpiery']}{final}CE"
                     if symbol == "SENSEX":
                         optionsymbol = f"BSE:{symbol}{params['TradeExpiery']}{final}CE"
-                    OrderLog=(f"{timestamp} Buy order executed @ {formatedsymbol}, target= {params['target_value']}, "
+                    OrderLog=(f"{timestamp} Buy order executed @ {formatedsymbol}, "
                               f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']},order symbol={optionsymbol}")
                     print(OrderLog)
                     write_to_order_logs(OrderLog)
 
 
                 if current_time>EntryTime and current_time < ExitTime and previousBar_close<params['triglow'] and (params['CPR_CONDITION']=="SHORT" or params['CPR_CONDITION']=="BOTH"):
-                    params["target_value"]=previousBar_close-params["Target"]
+
                     params["stoploss_value"]=previousBar_high
                     params['Trade'] = "SHORT"
+                    params["pphit"] = "NOHIT"
+                    params["Remainingqty"] = params['Quantity'] - params['PartialProfitQty']
+                    params['TimeBasedExit'] = "TAKEEXIT"
                     strikelist = getstrikes_put(
                         ltp=round_to_nearest(number=currentBar_close, nearest=params['strikestep']),
                         step=params['StrikeNumber'],
@@ -356,31 +361,82 @@ def main_strategy():
                     optionsymbol = f"NSE:{symbol}{params['TradeExpiery']}{final}CE"
                     if symbol == "SENSEX":
                         optionsymbol = f"BSE:{symbol}{params['TradeExpiery']}{final}CE"
-                    OrderLog = (f"{timestamp} Sell order executed @ {formatedsymbol}, target= {params['target_value']}, "
+                    OrderLog = (f"{timestamp} Sell order executed @ {formatedsymbol}, "
                                 f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']}, order symbol: {optionsymbol}")
                     print(OrderLog)
                     write_to_order_logs(OrderLog)
 
+
                 if params['Trade']=="BUY" and params['Trade'] is not None :
-                    if params["target_value"] is not None and currentBar_close>=params["target_value"]:
-                        OrderLog=f"{timestamp} Partial profit booked buy trade @ {formatedsymbol} @ {currentBar_close}"
+                    if params["stoploss_value"] is not None and currentBar_close<=params["stoploss_value"]:
+                        if params["pphit"] == "NOHIT":
+                            OrderLog = f"{timestamp} Stoploss  booked buy trade @ {formatedsymbol} @ {currentBar_close}, lotsize={params['Quantity']}"
+                            print(OrderLog)
+                            write_to_order_logs(OrderLog)
+                            params["pphit"] = "NOMORETRADES"
+                        if params["pphit"] == "HIT":
+                            OrderLog = f"{timestamp} Stoploss  booked buy trade @ {formatedsymbol} @ {currentBar_close}, lotsize={params['Remainingqty']}"
+                            print(OrderLog)
+                            write_to_order_logs(OrderLog)
+                            params["pphit"] = "NOMORETRADES"
+
+                    if current_time == ExitTime and params['TimeBasedExit'] == "TAKEEXIT" and (params["pphit"]=="HIT" or params["pphit"]=="NOHIT" ) :
+                        if params["pphit"]=="HIT":
+                            OrderLog = f"{timestamp} Time Based exit happened @ {formatedsymbol} @ {currentBar_close}, lotsize={params['Remainingqty']}"
+                            print(OrderLog)
+                            write_to_order_logs(OrderLog)
+                            params["pphit"] = "NOMORETRADES"
+                            params['TimeBasedExit']= "NOMORETRADES"
+
+                        if params["pphit"] == "NOHIT":
+                            OrderLog = f"{timestamp}  Time Based exit happened @ {formatedsymbol} @ {currentBar_close}, lotsize={params['Quantity']}"
+                            print(OrderLog)
+                            write_to_order_logs(OrderLog)
+                            params["pphit"] = "NOMORETRADES"
+                            params['TimeBasedExit'] = "NOMORETRADES"
+
+                    if params["SecondarySl"] is not None and currentBar_close<=params["SecondarySl"] and params["pphit"] == "NOHIT":
+                        params["pphit"] = "HIT"
+                        OrderLog = f"{timestamp} Partial Stoploss  booked buy trade @ {formatedsymbol} @ {currentBar_close}, lotsize={params['PartialProfitQty']}"
                         print(OrderLog)
                         write_to_order_logs(OrderLog)
 
-                    if params["stoploss_value"] is not None and currentBar_close<=params["stoploss_value"]:
-                        OrderLog = f"{timestamp} Stoploss  booked buy trade @ {formatedsymbol} @ {currentBar_close}"
-                        print(OrderLog)
-                        write_to_order_logs(OrderLog)
                 if params['Trade']=="SHORT" and params['Trade'] is not None :
-                    if params["target_value"] is not None and currentBar_close <= params["target_value"]:
-                        OrderLog = f"{timestamp} Partial profit booked sell trade @ {formatedsymbol} @ {currentBar_close}"
-                        print(OrderLog)
-                        write_to_order_logs(OrderLog)
 
                     if params["stoploss_value"] is not None and currentBar_close >= params["stoploss_value"]:
-                        OrderLog = f"{timestamp} Stoploss  booked sell trade @ {formatedsymbol} @ {currentBar_close}"
+                        if params["pphit"] == "NOHIT":
+                            OrderLog = f"{timestamp} Stoploss  booked sell trade @ {formatedsymbol} @ {currentBar_close}, lotsize={params['Quantity']}"
+                            print(OrderLog)
+                            write_to_order_logs(OrderLog)
+                            params["pphit"]="NOMORETRADES"
+
+                        if params["pphit"] == "HIT":
+                            OrderLog = f"{timestamp} Stoploss  booked sell trade @ {formatedsymbol} @ {currentBar_close}, lotsize={params['Remainingqty']}"
+                            print(OrderLog)
+                            write_to_order_logs(OrderLog)
+                            params["pphit"] = "NOMORETRADES"
+
+                    if current_time == ExitTime and params['TimeBasedExit'] == "TAKEEXIT" and (params["pphit"]=="HIT" or params["pphit"]=="NOHIT" ) :
+                        if params["pphit"]=="HIT":
+                            OrderLog = f"{timestamp} Time Based exit happened @ {formatedsymbol} @ {currentBar_close}, lotsize={params['Remainingqty']}"
+                            print(OrderLog)
+                            write_to_order_logs(OrderLog)
+                            params["pphit"] = "NOMORETRADES"
+                            params['TimeBasedExit'] = "NOMORETRADES"
+
+                        if params["pphit"] == "NOHIT":
+                            OrderLog = f"{timestamp}  Time Based exit happened @ {formatedsymbol} @ {currentBar_close}, lotsize={params['Quantity']}"
+                            print(OrderLog)
+                            write_to_order_logs(OrderLog)
+                            params["pphit"] = "NOMORETRADES"
+                            params['TimeBasedExit'] = "NOMORETRADES"
+
+                    if params["SecondarySl"] is not None and currentBar_close >= params["SecondarySl"] and params["pphit"] == "NOHIT":
+                        params["pphit"] = "HIT"
+                        OrderLog = f"{timestamp} Partial Stoploss sell trade @ {formatedsymbol} @ {currentBar_close}, lotsize={params['PartialProfitQty']}"
                         print(OrderLog)
                         write_to_order_logs(OrderLog)
+
     except Exception as e:
         print("Error in main strategy : ", str(e))
         traceback.print_exc()
