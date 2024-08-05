@@ -1,4 +1,4 @@
- pyinstaller --onefile --hidden-import fyres_apiv3 main.py
+ pyinstaller --onefile --hidden-import=pkg_resources.py2_warn --hidden-import=pkg_resources.main --hidden-import pya3 main.py
 
 
 "run inside PyCharm .venv"
