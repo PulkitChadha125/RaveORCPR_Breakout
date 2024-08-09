@@ -5,21 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d8d8fd22-e4ff-41e2-9bfe-881c2e7926ee" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/AliceBlueIntegration.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/BFO.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/BSE.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/NFO.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/alice_object.pkl" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Credentials.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Credentials.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/FyresIntegration.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Master.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Master.csv" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/main.exe" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/BFO.csv" beforeDir="false" afterPath="$PROJECT_DIR$/BFO.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/NFO.csv" beforeDir="false" afterPath="$PROJECT_DIR$/NFO.csv" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/TradeSettings.csv" beforeDir="false" afterPath="$PROJECT_DIR$/TradeSettings.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/fyersApi.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/fyersRequests.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data.csv" beforeDir="false" afterPath="$PROJECT_DIR$/data.csv" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.spec" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyinstaller command.txt" beforeDir="false" afterPath="$PROJECT_DIR$/pyinstaller command.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

@@ -152,7 +152,8 @@ def get_user_settings():
                 "runtime": datetime.now(),'EntryTime': row['EntryTime'],'ExitTime': row['ExitTime'],'Atr_Period':row['Atr_Period'],
                 'StrikeNumber': row['StrikeNumber'],'strikestep': row['strikestep'],'TradeExpiery':row['TradeExpiery'],'USEEXPIERY':row['USEEXPIERY'],
                 'exch':None,'aliceexp':None,'AliceblueTradeExp': row['AliceblueTradeExp'],'TF_INT':row['TF_INT'],"BASESYMBOL":row['BASESYMBOL'],
-                'previousBar_close':None,'currentBar_close':None
+                'previousBar_close':None,'currentBar_close':None,'pivot'  : None,'bc' : None,'tc' :None,"cpr_cal": False,
+
 
             }
             result_dict[row['Symbol']] = symbol_dict
@@ -203,9 +204,7 @@ def write_to_order_logs(message):
     with open('OrderLog.txt', 'a') as file:  # Open the file in append mode
         file.write(message + '\n')
 
-pivot = None
-bc = None
-tc = None
+
 
 def get_max_delta_strike(strikelist):
     max_delta = -float("inf")  # Initialize with negative infinity
@@ -245,36 +244,27 @@ def main_strategy():
                 print("symbol_value: ",symbol_value)
                 if current_time>EntryTime and current_time < ExitTime and params['once']==False:
                     params['once']=True
+                    time.sleep(3)
                     print(f"get_token{params['Symbol']}: ",get_token(params['Symbol']))
                     YesterdayOhlc=AngelIntegration.get_historical_data(symbol=params['Symbol'], token=get_token(params['Symbol']), timeframe='ONE_DAY', segment=segment)
-                    # print("YesterdayOhlc: ", YesterdayOhlc)
                     second_last_day = YesterdayOhlc.iloc[-2]
-                    # print("second_last_day: ", second_last_day)
                     second_last_high = second_last_day[2]
-                    # print("second_last_high: ", second_last_high)
                     second_last_low = second_last_day[3]
-                    # print("second_last_low: ", second_last_low)
                     second_last_close = second_last_day[4]
-                    # print("second_last_close: ", second_last_close)
-                    pivot = (second_last_high + second_last_low + second_last_close) / 3
-                    bc = (second_last_high + second_last_low) / 2
-                    tc = (pivot - bc) + pivot
-
+                    params['pivot']= (second_last_high + second_last_low + second_last_close) / 3
+                    params['bc'] = (second_last_high + second_last_low) / 2
+                    params['tc'] =(params['pivot'] - params['bc']) + params['pivot']
                     presentDay=AngelIntegration.get_historical_data_atr(symbol= params['Symbol'], token=get_token(params['Symbol']),
                                                                         timeframe=params['TimeFrame'],atr=params['Atr_Period'], segment=segment)
-                    # print("presentDay: ", presentDay)
                     previousBar = presentDay.iloc[-2]
-                    # print("previousBar: ", previousBar)
                     previousBar_high = previousBar[2]
                     previousBar_low = previousBar[3]
-                    # print("previousBar_high: ", previousBar_high)
-                    # print("previousBar_low: ", previousBar_low)
                     params['trighigh']=previousBar_high
                     params['triglow']=previousBar_low
 
                 if current_time>EntryTime and current_time < ExitTime and datetime.now() >= params["runtime"]:
                     try:
-                        time.sleep(int(1))
+                        time.sleep(int(2))
                         presentDay = AngelIntegration.get_historical_data_atr(symbol= params['Symbol'], token=get_token(params['Symbol']),
                                                                         timeframe=params['TimeFrame'],atr=params['Atr_Period'], segment=segment)
                         previousBar = presentDay.iloc[-2]
@@ -304,46 +294,39 @@ def main_strategy():
 
 
 
-                if current_time>EntryTime and current_time < ExitTime and params['USE_CPR']==True:
-                    if params['previousBar_close']>bc:
+                if current_time>EntryTime and current_time < ExitTime and params['USE_CPR']==True and  params["cpr_cal"]== False:
+
+                    if params['previousBar_close']>params['bc']:
                         params['CPR_CONDITION']="BUY"
-                    if params['previousBar_close']<tc:
+                    if params['previousBar_close']<params['tc']:
                         params['CPR_CONDITION']="SHORT"
-                if params['USE_CPR']==False:
+
+                    OrderLog = f"{timestamp} Orb range @ {params['Symbol']}, Highprice={params['trighigh']},Lowprice={params['triglow']},bc={params['bc']},tc={params['tc']}"
+                    print(OrderLog)
+                    write_to_order_logs(OrderLog)
+                    params["cpr_cal"]=True
+
+                if params['USE_CPR']==False and  params["cpr_cal"]== False:
                     params['CPR_CONDITION']="BOTH"
+                    OrderLog = f"{timestamp} Orb range @ {params['Symbol']}, Highprice={params['trighigh']},Lowprice={params['triglow']},bc=NA,tc=NA"
+                    print(OrderLog)
+                    write_to_order_logs(OrderLog)
+                    params["cpr_cal"] = True
 
                 if current_time > EntryTime and current_time < ExitTime:
-                    print(f"{timestamp} {params['Symbol']} previousBar_close:{params['previousBar_close']},pivot: {pivot}"
-                          f" bc: {bc}, tc: {tc},Trade: {params['Trade']},stoploss_value: {params['stoploss_value']}"
+                    print(f"{timestamp} {params['Symbol']} previousBar_close:{params['previousBar_close']},pivot: {params['pivot']}"
+                          f" bc: {params['bc']}, tc: {params['tc']},Trade: {params['Trade']},stoploss_value: {params['stoploss_value']}"
                           f",parttial qty: {params['PartialProfitQty']},SecondarySl: {params['SecondarySl']}")
-                    # strikelist = getstrikes_call(
-                    #     ltp=round_to_nearest(number=params['currentBar_close'], nearest=params['strikestep']),
-                    #     step=params['StrikeNumber'],
-                    #     strikestep=params['strikestep'])
-                    # print("Collection:", strikelist)
-                    # for strike in strikelist:
-                    #     date_format = '%d-%b-%y'
-                    #
-                    #     delta = float(
-                    #         option_delta_calculation(symbol=params['BASESYMBOL'], expiery=str(params['TradeExpiery']),
-                    #                                  Tradeexp=params['TradeExpiery'],
-                    #                                  strike=strike,
-                    #                                  optiontype="CE",
-                    #                                  underlyingprice=params['currentBar_close'], MODE=params["USEEXPIERY"]))
-                    #     strikelist[strike] = delta
-                    #
-                    # print("strikelist: ", strikelist)
-                    # final = get_max_delta_strike(strikelist)
-                    # print("Final strike: ", final)
-                    # params['exch']="NFO"
-                    # aliceexp = datetime.strptime(params['AliceblueTradeExp'], '%d-%b-%y')
-                    # aliceexp = aliceexp.strftime('%Y-%m-%d')
-                    # params['aliceexp'] = aliceexp
+
 
 
 
                 if (current_time>EntryTime and current_time < ExitTime and  params['previousBar_close']>params['trighigh']
-                        and (params['CPR_CONDITION']=="BUY" or params['CPR_CONDITION']=="BOTH")):
+                        and (params['CPR_CONDITION']=="BUY" or params['CPR_CONDITION']=="BOTH") and params['Trade'] is None):
+
+                    OrderLog = f"{timestamp} Initiating buy trade call@ {params['Symbol']}"
+                    print(OrderLog)
+                    write_to_order_logs(OrderLog)
                     params["stoploss_value"]=previousBar_low
                     params['Trade']="BUY"
                     params["pphit"]= "NOHIT"
@@ -353,7 +336,7 @@ def main_strategy():
                         ltp=round_to_nearest(number=params['currentBar_close'], nearest=params['strikestep']),
                         step=params['StrikeNumber'],
                         strikestep=params['strikestep'])
-                    print("Collection:", strikelist)
+                    print("Strikes to check for delta call:", strikelist)
                     for strike in strikelist:
                         date_format = '%d-%b-%y'
 
@@ -377,7 +360,7 @@ def main_strategy():
                     aliceexp = aliceexp.strftime('%Y-%m-%d')
                     params['aliceexp'] = aliceexp
                     print("exch: ", params['exch'])
-                    print("symbol: ", symbol)
+
 
                     AliceBlueIntegration.buy(quantity=int(params["Quantity"]), exch=params['exch'], symbol=params['BASESYMBOL'],
                                              expiry_date=params['aliceexp'],
@@ -391,17 +374,20 @@ def main_strategy():
 
 
                 if (current_time>EntryTime and current_time < ExitTime and params['previousBar_close']<params['triglow']
-                        and (params['CPR_CONDITION']=="SHORT" or params['CPR_CONDITION']=="BOTH")):
+                        and (params['CPR_CONDITION']=="SHORT" or params['CPR_CONDITION']=="BOTH")and params['Trade'] is None):
+                    OrderLog = f"{timestamp} Initiating buy trade put@ {params['Symbol']}"
+                    print(OrderLog)
+                    write_to_order_logs(OrderLog)
                     params["stoploss_value"]=previousBar_high
                     params['Trade'] = "SHORT"
                     params["pphit"] = "NOHIT"
                     params["Remainingqty"] = params['Quantity'] - params['PartialProfitQty']
                     params['TimeBasedExit'] = "TAKEEXIT"
-                    strikelist = getstrikes_call(
+                    strikelist = getstrikes_put(
                         ltp=round_to_nearest(number=params['currentBar_close'], nearest=params['strikestep']),
                         step=params['StrikeNumber'],
                         strikestep=params['strikestep'])
-                    print("Collection:", strikelist)
+                    print("Strikes to check for delta put:", strikelist)
                     for strike in strikelist:
                         date_format = '%d-%b-%y'
 
@@ -417,7 +403,7 @@ def main_strategy():
                     print("strikelist: ", strikelist)
                     final = get_max_delta_strike(strikelist)
                     print("Final strike: ", final)
-                    params['callstrike'] = final
+                    params['putstrike'] = final
                     optionsymbol = f"NSE:{symbol}{params['TradeExpiery']}{final}PE"
                     params['exch'] = "NFO"
 
@@ -444,13 +430,14 @@ def main_strategy():
                             print(OrderLog)
                             write_to_order_logs(OrderLog)
                             params["pphit"] = "NOMORETRADES"
-
+                            params['Trade']=None
                             AliceBlueIntegration.buyexit(quantity=params["Quantity"], exch=params['exch'],
                                                          symbol=params['BASESYMBOL'],
                                                          expiry_date=params['aliceexp'],
                                                          strike=params["callstrike"], call=True,
                                                          producttype=params["producttype"])
                         if params["pphit"] == "HIT":
+                            params['Trade'] = None
                             OrderLog = f"{timestamp} Stoploss  booked buy trade @ {symbol} @ {params['currentBar_close']}, lotsize={params['Remainingqty']}"
                             print(OrderLog)
                             write_to_order_logs(OrderLog)
@@ -499,6 +486,7 @@ def main_strategy():
 
                     if params["stoploss_value"] is not None and params['currentBar_close'] >= params["stoploss_value"]:
                         if params["pphit"] == "NOHIT":
+                            params['Trade'] = None
                             OrderLog = f"{timestamp} Stoploss  booked sell trade @ {symbol} @ {params['currentBar_close']}, lotsize={params['Quantity']}"
                             print(OrderLog)
                             write_to_order_logs(OrderLog)
@@ -510,6 +498,7 @@ def main_strategy():
                                                          producttype=params["producttype"])
 
                         if params["pphit"] == "HIT":
+                            params['Trade'] = None
                             OrderLog = f"{timestamp} Stoploss  booked sell trade @ {symbol} @ {params['currentBar_close']}, lotsize={params['Remainingqty']}"
                             print(OrderLog)
                             write_to_order_logs(OrderLog)
