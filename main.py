@@ -133,7 +133,6 @@ def delete_file_contents(file_name):
     except Exception as e:
         print(f"An error occurred: {str(e)}")
 def get_user_settings():
-    delete_file_contents("OrderLog.txt")
     global result_dict
     # Symbol,lotsize,Stoploss,Target1,Target2,Target3,Target4,Target1Lotsize,Target2Lotsize,Target3Lotsize,Target4Lotsize,BreakEven,ReEntry
     try:
@@ -152,7 +151,8 @@ def get_user_settings():
                 "runtime": datetime.now(),'EntryTime': row['EntryTime'],'ExitTime': row['ExitTime'],'Atr_Period':row['Atr_Period'],
                 'StrikeNumber': row['StrikeNumber'],'strikestep': row['strikestep'],'TradeExpiery':row['TradeExpiery'],'USEEXPIERY':row['USEEXPIERY'],
                 'exch':None,'aliceexp':None,'AliceblueTradeExp': row['AliceblueTradeExp'],'TF_INT':row['TF_INT'],"BASESYMBOL":row['BASESYMBOL'],
-                'previousBar_close':None,'currentBar_close':None,'pivot'  : None,'bc' : None,'tc' :None,"cpr_cal": False,
+                'previousBar_close':None,'currentBar_close':None,'pivot'  : None,'bc' : None,'tc' :None,"cpr_cal": False,'pphit':None,'TradeAtr':None,
+                'SlTriggerPrice':None,'runningatr':None,"firsttrail":None,'Target1': row['Target1'],'Target1Qty': row['Target1Qty'],'Tp1Val':None
 
 
             }
@@ -189,7 +189,7 @@ pwd=credentials_dict.get('pin')
 totp_string=credentials_dict.get('totp_string')
 AngelIntegration.login(api_key=api_key,username=username,pwd=pwd,totp_string=totp_string)
 
-# AngelIntegration.symbolmpping() unblock later
+AngelIntegration.symbolmpping()
 
 
 def get_token(symbol):
@@ -199,7 +199,7 @@ def get_token(symbol):
         token = row.iloc[0]['token']
         return token
 
-
+atr=None
 def write_to_order_logs(message):
     with open('OrderLog.txt', 'a') as file:  # Open the file in append mode
         file.write(message + '\n')
@@ -224,7 +224,7 @@ previousBar_low = 0
 previousBar_high =0
 
 def main_strategy():
-    global result_dict,once,pivot,bc,tc,previousBar_close,currentBar_close,previousBar_low,previousBar_high
+    global atr,result_dict,once,pivot,bc,tc,previousBar_close,currentBar_close,previousBar_low,previousBar_high
     print("main_strategy running ")
     try:
         for symbol, params in result_dict.items():
@@ -276,12 +276,9 @@ def main_strategy():
                         previousBar_high = previousBar[2]
                         params['previousBar_close']= previousBar_close
                         params['currentBar_close']= currentBar_close
-                        if params['Trade']=="BUY":
-                            atr = previousBar[6]
-                            params["SecondarySl"] = previousBar_low-(atr*float(params['Atr_Multiplier']))
-                        if params['Trade']=="SHORT":
-                            atr = previousBar[6]
-                            params["SecondarySl"] = previousBar_high + (atr*float(params['Atr_Multiplier']))
+                        params['runningatr']= previousBar[6]
+
+
                         next_specific_part_time = datetime.now() + timedelta(
                                 seconds=determine_min(str(params["TF_INT"])) * 60)
                         next_specific_part_time = round_down_to_interval(next_specific_part_time,
@@ -292,7 +289,7 @@ def main_strategy():
                         print("Error happened in fetching data : ", str(e))
                         traceback.print_exc()
 
-
+                params['currentBar_close']= AngelIntegration.get_ltp(symbol= params['Symbol'], token=get_token(params['Symbol']), segment=segment)
 
                 if current_time>EntryTime and current_time < ExitTime and params['USE_CPR']==True and  params["cpr_cal"]== False:
 
@@ -313,12 +310,9 @@ def main_strategy():
                     write_to_order_logs(OrderLog)
                     params["cpr_cal"] = True
 
-                if current_time > EntryTime and current_time < ExitTime:
-                    print(f"{timestamp} {params['Symbol']} previousBar_close:{params['previousBar_close']},pivot: {params['pivot']}"
-                          f" bc: {params['bc']}, tc: {params['tc']},Trade: {params['Trade']},stoploss_value: {params['stoploss_value']}"
-                          f",parttial qty: {params['PartialProfitQty']},SecondarySl: {params['SecondarySl']}")
-
-
+                if current_time > EntryTime :
+                    print(f"{timestamp} {params['Symbol']} TimeBasedExit: {params['TimeBasedExit']} , pphit:  {params['pphit']} ,SecondarySl: {params['SecondarySl']},"
+                          f"  SlTriggerPrice: {params['SlTriggerPrice']},runningatr: {params['runningatr']}")
 
 
                 if (current_time>EntryTime and current_time < ExitTime and  params['previousBar_close']>params['trighigh']
@@ -330,6 +324,16 @@ def main_strategy():
                     params["stoploss_value"]=previousBar_low
                     params['Trade']="BUY"
                     params["pphit"]= "NOHIT"
+                    params['TradeAtr']=params['runningatr']
+
+                    params['SlTriggerPrice'] = params['currentBar_close'] + (
+                                params['TradeAtr'] * params['Atr_Multiplier'])
+                    params['SecondarySl'] =  previousBar_low
+                    # 'Target1': row['Target1'],'Target1Qty': row['Target1Qty']
+                    if params['Target1'] is not None:
+                       params['Tp1Val']=params['currentBar_close']+params['Target1']
+
+                    params["firsttrail"] = False
                     params["Remainingqty"]= params[ 'Quantity']-params['PartialProfitQty']
                     params['TimeBasedExit']= "TAKEEXIT"
                     strikelist = getstrikes_call(
@@ -367,7 +371,9 @@ def main_strategy():
                                              strike=params['callstrike'], call=True, producttype=params["producttype"])
 
                     OrderLog = (f"{timestamp} Buy order executed @ {params['Symbol']}, "
-                                f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']},order symbol={optionsymbol}")
+                                f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']},order symbol={optionsymbol}"
+                                f" Partial sl = {params['SecondarySl']} , atr val = {params['TradeAtr']},tsl trigger level:{params['SlTriggerPrice']},"
+                                f"Ltp: {params['currentBar_close']} ")
                     print(OrderLog)
                     write_to_order_logs(OrderLog)
 
@@ -381,8 +387,15 @@ def main_strategy():
                     params["stoploss_value"]=previousBar_high
                     params['Trade'] = "SHORT"
                     params["pphit"] = "NOHIT"
+                    params["firsttrail"] = False
+                    params['TradeAtr'] = params['runningatr']
+                    params['SlTriggerPrice'] = params['currentBar_close'] - (params['TradeAtr'] * params['Atr_Multiplier'])
+                    params['SecondarySl'] = previousBar_high
                     params["Remainingqty"] = params['Quantity'] - params['PartialProfitQty']
                     params['TimeBasedExit'] = "TAKEEXIT"
+                    if params['Target1'] is not None:
+                       params['Tp1Val']=params['currentBar_close']-params['Target1']
+
                     strikelist = getstrikes_put(
                         ltp=round_to_nearest(number=params['currentBar_close'], nearest=params['strikestep']),
                         step=params['StrikeNumber'],
@@ -418,15 +431,29 @@ def main_strategy():
                                              strike=params['putstrike'], call=False, producttype=params["producttype"])
 
                     OrderLog = (f"{timestamp} Sell order executed @ {symbol}, "
-                                f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']}, order symbol: {optionsymbol}")
+                                f"stoploss={params['stoploss_value']}, partialqty={params['PartialProfitQty']}, order symbol: {optionsymbol}"
+                                f" Partial sl ={params['SecondarySl']}, atr val = {atr},tsl trigger level:{params['SlTriggerPrice']} "
+                                f"ltp : {params['currentBar_close']}")
                     print(OrderLog)
                     write_to_order_logs(OrderLog)
 
 
                 if params['Trade']=="BUY" and params['Trade'] is not None :
-                    if params["stoploss_value"] is not None and params['currentBar_close']<=params["stoploss_value"]:
+                    if params['Tp1Val'] is not None and  params['currentBar_close']>=params['Tp1Val']:
+                        OrderLog = f"{timestamp} Target1  booked buy trade @ {symbol} @ {params['currentBar_close']}, lotsize={params['Target1Qty']}"
+                        print(OrderLog)
+                        write_to_order_logs(OrderLog)
+                        AliceBlueIntegration.buyexit(quantity=params["Target1Qty"], exch=params['exch'],
+                                                     symbol=params['BASESYMBOL'],
+                                                     expiry_date=params['aliceexp'],
+                                                     strike=params["callstrike"], call=True,
+                                                     producttype=params["producttype"])
+                        params['Tp1Val']=None
+                        # params["Remainingqty"]=params["Quantity"]-params["Tp1Val"]
+
+                    if params["stoploss_value"] is not None and params['previousBar_close']<=params["stoploss_value"]:
                         if params["pphit"] == "NOHIT":
-                            OrderLog = f"{timestamp} Stoploss  booked buy trade @ {symbol} @ {params['currentBar_close']}, lotsize={params['Quantity']}"
+                            OrderLog = f"{timestamp} Stoploss  booked buy trade @ {symbol} @ {params['previousBar_close']}, lotsize={params['Quantity']}"
                             print(OrderLog)
                             write_to_order_logs(OrderLog)
                             params["pphit"] = "NOMORETRADES"
@@ -438,7 +465,7 @@ def main_strategy():
                                                          producttype=params["producttype"])
                         if params["pphit"] == "HIT":
                             params['Trade'] = None
-                            OrderLog = f"{timestamp} Stoploss  booked buy trade @ {symbol} @ {params['currentBar_close']}, lotsize={params['Remainingqty']}"
+                            OrderLog = f"{timestamp} Stoploss  booked buy trade @ {symbol} @ {params['previousBar_close']}, lotsize={params['Remainingqty']}"
                             print(OrderLog)
                             write_to_order_logs(OrderLog)
                             params["pphit"] = "NOMORETRADES"
@@ -448,7 +475,7 @@ def main_strategy():
                                                          strike=params["callstrike"], call=True,
                                                          producttype=params["producttype"])
 
-                    if current_time == ExitTime and params['TimeBasedExit'] == "TAKEEXIT" and (params["pphit"]=="HIT" or params["pphit"]=="NOHIT" ) :
+                    if current_time >= ExitTime and params['TimeBasedExit'] == "TAKEEXIT" and (params["pphit"]=="HIT" or params["pphit"]=="NOHIT" ) :
                         if params["pphit"]=="HIT":
                             OrderLog = f"{timestamp} Time Based exit happened @ {symbol} @ {params['currentBar_close']}, lotsize={params['Remainingqty']}"
                             print(OrderLog)
@@ -471,8 +498,18 @@ def main_strategy():
                                                          expiry_date=params['aliceexp'],
                                                          strike=params["callstrike"], call=True,
                                                          producttype=params["producttype"])
-
-                    if params["SecondarySl"] is not None and params['currentBar_close']<=params["SecondarySl"] and params["pphit"] == "NOHIT":
+                    
+                    if params['SlTriggerPrice'] is not None and params['currentBar_close']>=params['SlTriggerPrice']:
+                        params['SlTriggerPrice']= params['currentBar_close'] + (params['TradeAtr'] * params['Atr_Multiplier'])
+                        params["SecondarySl"]=params["SecondarySl"]+(params['TradeAtr'] * params['Atr_Multiplier'])
+                        params["firsttrail"] = True
+                        OrderLog = f"{timestamp} Tsl level hit @ {symbol} @ {params['currentBar_close']},new partial sl = {params['SecondarySl']},tsl trigger level:{params['SlTriggerPrice']} "
+                        print(OrderLog)
+                        write_to_order_logs(OrderLog)
+                        
+                        
+                        
+                    if params["firsttrail"] == True and params["SecondarySl"] is not None and params['currentBar_close']<=params["SecondarySl"] and params["pphit"] == "NOHIT":
                         params["pphit"] = "HIT"
                         AliceBlueIntegration.buyexit(quantity=params["PartialProfitQty"], exch=params['exch'], symbol=params['BASESYMBOL'],
                                                      expiry_date=params['aliceexp'],
@@ -483,8 +520,19 @@ def main_strategy():
                         write_to_order_logs(OrderLog)
 
                 if params['Trade']=="SHORT" and params['Trade'] is not None :
+                    if params['Tp1Val'] is not None and  params['currentBar_close']<=params['Tp1Val']:
+                        OrderLog = f"{timestamp} Target1  booked sell trade @ {symbol} @ {params['currentBar_close']}, lotsize={params['Target1Qty']}"
+                        print(OrderLog)
+                        write_to_order_logs(OrderLog)
+                        AliceBlueIntegration.buyexit(quantity=int(params["Target1Qty"]), exch=params['exch'],
+                                                     symbol=params['BASESYMBOL'],
+                                                     expiry_date=params['aliceexp'],
+                                                     strike=params["putstrike"], call=False,
+                                                     producttype=params["producttype"])
+                        params['Tp1Val'] = None
+                        # params["Remainingqty"] = params["Quantity"] - params["Tp1Val"]
 
-                    if params["stoploss_value"] is not None and params['currentBar_close'] >= params["stoploss_value"]:
+                    if params["stoploss_value"] is not None and params['previousBar_close'] >= params["stoploss_value"]:
                         if params["pphit"] == "NOHIT":
                             params['Trade'] = None
                             OrderLog = f"{timestamp} Stoploss  booked sell trade @ {symbol} @ {params['currentBar_close']}, lotsize={params['Quantity']}"
@@ -510,7 +558,7 @@ def main_strategy():
                                                          producttype=params["producttype"])
 
 
-                    if current_time == ExitTime and params['TimeBasedExit'] == "TAKEEXIT" and (params["pphit"]=="HIT" or params["pphit"]=="NOHIT" ) :
+                    if current_time >= ExitTime and params['TimeBasedExit'] == "TAKEEXIT" and (params["pphit"]=="HIT" or params["pphit"]=="NOHIT" ) :
                         if params["pphit"]=="HIT":
                             OrderLog = f"{timestamp} Time Based exit happened @ {symbol} @ {params['currentBar_close']}, lotsize={params['Remainingqty']}"
                             print(OrderLog)
@@ -535,7 +583,18 @@ def main_strategy():
                                                          strike=params["putstrike"], call=False,
                                                          producttype=params["producttype"])
 
-                    if params["SecondarySl"] is not None and params['currentBar_close'] >= params["SecondarySl"] and params["pphit"] == "NOHIT":
+                    if params['SlTriggerPrice'] is not None and params['currentBar_close'] <= params['SlTriggerPrice']:
+                        params['SlTriggerPrice'] = params['currentBar_close'] - (
+                                    params['TradeAtr'] * params['Atr_Multiplier'])
+                        params["SecondarySl"] = params["SecondarySl"] - (params['TradeAtr'] * params['Atr_Multiplier'])
+                        params["firsttrail"] = True
+                        OrderLog = f"{timestamp} Tsl level hit @ {symbol} @ {params['currentBar_close']},new partial sl = {params['SecondarySl']},tsl trigger level:{params['SlTriggerPrice']} "
+                        print(OrderLog)
+                        write_to_order_logs(OrderLog)
+
+
+
+                    if params["firsttrail"] == True and params["SecondarySl"] is not None and params['currentBar_close'] >= params["SecondarySl"] and params["pphit"] == "NOHIT":
                         params["pphit"] = "HIT"
                         AliceBlueIntegration.buyexit(quantity=params["PartialProfitQty"], exch=params['exch'], symbol=params['BASESYMBOL'],
                                                      expiry_date=params['aliceexp'],

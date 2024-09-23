@@ -87,6 +87,7 @@ def get_historical_data_atr(symbol, token, timeframe, segment,atr):
 
     except Exception as e:
         logger.exception(f"Historic Api failed: {e}")
+
 def get_historical_data(symbol, token, timeframe, segment):
     global smartApi
     try:

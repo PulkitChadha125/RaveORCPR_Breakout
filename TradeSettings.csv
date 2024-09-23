@@ -1,3 +1,2 @@
-Symbol,Quantity,EXPIERY,TimeFrame,TF_INT,BASESYMBOL,USE_CPR,PartialProfitQty,Atr_Period,Atr_Multiplier,EntryTime,ExitTime,strikestep,StrikeNumber,USEEXPIERY,TradeExpiery,AliceblueTradeExp,PRODUCT_TYPE
-Nifty 50,50,29-Aug-24,FIVE_MINUTE,5,NIFTY,TRUE,25,14,1,10:30,23:50,50,4,MONTHLY,15-Aug-24,15-Aug-24,D
-Nifty Bank,50,29-Aug-24,FIVE_MINUTE,5,NIFTY,TRUE,25,14,1,10:30,23:50,50,4,MONTHLY,14-Aug-24,15-Aug-24,D
+Symbol,Quantity,EXPIERY,TimeFrame,TF_INT,BASESYMBOL,USE_CPR,PartialProfitQty,Atr_Period,Atr_Multiplier,Target1,Target1Qty,EntryTime,ExitTime,strikestep,StrikeNumber,USEEXPIERY,TradeExpiery,AliceblueTradeExp,PRODUCT_TYPE
+MIDCAP-EQ,50,26-Aug-24,FIVE_MINUTE,5,MIDCPNIFTY,TRUE,25,14,1,20,25,10:30,23:50,25,4,MONTHLY,26-Aug-24,26-Aug-24,D
